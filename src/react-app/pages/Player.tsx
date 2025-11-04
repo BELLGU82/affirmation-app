@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import GradientBackground from "@/react-app/components/GradientBackground";
 import BottomNavigation from "@/react-app/components/BottomNavigation";
 import Button from "@/react-app/components/Button";
@@ -11,6 +11,11 @@ import {
   Volume2,
   Settings,
   AlertCircle,
+  Pencil,
+  Trash2,
+  X,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { useAffirmations } from "@/react-app/hooks/useAffirmations";
 import { useAudioPlayer } from "@/react-app/hooks/useAudioPlayer";
@@ -28,6 +33,9 @@ export default function Player() {
     toggleFavorite,
     setAffirmation,
     loadAffirmations,
+    selectAffirmation,
+    updateAffirmation,
+    deleteAffirmation,
   } = useAffirmations();
 
   const { settings, updateMasterVolume } = useAudioSettings();
@@ -41,6 +49,7 @@ export default function Player() {
     loadAudio,
     togglePlayback,
     seek,
+    updateVolumeImmediate,
   } = useAudioPlayer(() => {
     // Auto-advance to next affirmation when current ends
     if (hasNext && settings.autoplay) {
@@ -94,14 +103,6 @@ export default function Player() {
               const data = await response.json();
               if (data.success && data.audioUrl) {
                 audioUrl = data.audioUrl;
-                // Update the affirmation in state
-                // setAffirmations((prev) =>
-                //   prev.map((aff) =>
-                //     aff.id === currentAffirmation.id
-                //       ? { ...aff, audio_url: audioUrl }
-                //       : aff
-                //   )
-                // );
               }
             }
           } catch (error) {
@@ -109,14 +110,42 @@ export default function Player() {
           }
         }
 
-        const backgroundMusicUrl =
-          currentAffirmation.background_music_url || null;
+        // Convert storage key to API URL if needed
+        if (audioUrl && audioUrl.startsWith("affirmations/") && currentAffirmation.id) {
+          audioUrl = `/api/affirmations/${currentAffirmation.id}/audio`;
+        }
+
+        // Convert background music storage key to API URL if needed
+        let backgroundMusicUrl = currentAffirmation.background_music_url || null;
+        if (backgroundMusicUrl) {
+          if (
+            backgroundMusicUrl.startsWith("background-music/") &&
+            !backgroundMusicUrl.startsWith("background-music/custom/")
+          ) {
+            // Built-in music
+            const style = backgroundMusicUrl
+              .replace("background-music/", "")
+              .replace(".mp3", "");
+            backgroundMusicUrl = `/api/background-music/${style}`;
+          } else if (
+            backgroundMusicUrl.startsWith("background-music/custom/")
+          ) {
+            // Custom music
+            const parts = backgroundMusicUrl
+              .replace("background-music/custom/", "")
+              .split("/");
+            const userId = parts[0];
+            const filename = parts[1];
+            backgroundMusicUrl = `/api/background-music/custom/${userId}/${filename}`;
+          }
+        }
+
         loadAudio(audioUrl || null, backgroundMusicUrl);
       };
 
       loadAudioForAffirmation();
     }
-  }, [currentAffirmation, loadAudio, affirmations, setAffirmation]);
+  }, [currentAffirmation, loadAudio]);
 
   const EmptyState = () => (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
@@ -151,11 +180,90 @@ export default function Player() {
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     updateMasterVolume(newVolume);
+    // Update volume immediately on audio element
+    if (updateVolumeImmediate) {
+      updateVolumeImmediate(newVolume);
+    }
+  };
+
+  const handleVolumeInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Update volume immediately while dragging
+    const newVolume = parseFloat(e.target.value);
+    updateMasterVolume(newVolume);
+    // Update volume immediately on audio element
+    if (updateVolumeImmediate) {
+      updateVolumeImmediate(newVolume);
+    }
   };
 
   const handleToggleFavorite = async () => {
     if (currentAffirmation) {
       await toggleFavorite(currentIndex);
+    }
+  };
+
+  // State for editing and deleting
+  const [showAll, setShowAll] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState<string>("");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleStartEdit = (affirmation: { id?: number; text: string }) => {
+    if (affirmation.id) {
+      setEditingId(affirmation.id);
+      setEditingText(affirmation.text);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingText("");
+  };
+
+  const handleSaveEdit = async () => {
+    if (editingId && editingText.trim()) {
+      setSaving(true);
+      try {
+        await updateAffirmation(editingId, editingText.trim());
+        setEditingId(null);
+        setEditingText("");
+      } catch (error) {
+        console.error("Failed to update affirmation:", error);
+      } finally {
+        setSaving(false);
+      }
+    }
+  };
+
+  const handleDeleteClick = (affirmationId?: number) => {
+    if (affirmationId) {
+      setDeletingId(affirmationId);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (deletingId) {
+      setSaving(true);
+      try {
+        await deleteAffirmation(deletingId);
+        setDeletingId(null);
+        // If we deleted the current affirmation, select the first one
+        if (deletingId === currentAffirmation?.id) {
+          if (affirmations.length > 1) {
+            const remainingIndex = affirmations.findIndex(
+              (aff) => aff.id !== deletingId
+            );
+            if (remainingIndex >= 0) {
+              selectAffirmation(remainingIndex);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to delete affirmation:", error);
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
@@ -177,7 +285,13 @@ export default function Player() {
         <div className="px-6 pt-12 pb-6">
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-bold text-gray-800">Now Playing</h1>
-            <Button variant="ghost" size="sm">
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => {
+                window.location.href = "/settings";
+              }}
+            >
               <Settings size={20} />
             </Button>
           </div>
@@ -283,14 +397,31 @@ export default function Player() {
               {/* Volume and Actions */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3 flex-1">
-                  <Volume2 size={20} className="text-gray-600" />
+                  <button
+                    onClick={() => {
+                      if (settings.masterVolume > 0) {
+                        updateMasterVolume(0);
+                      } else {
+                        updateMasterVolume(0.8);
+                      }
+                    }}
+                    className="text-gray-600 hover:text-gray-800 transition-colors"
+                    title={settings.masterVolume > 0 ? "Mute" : "Unmute"}
+                  >
+                    {settings.masterVolume > 0 ? (
+                      <Volume2 size={20} />
+                    ) : (
+                      <Volume2 size={20} className="opacity-50" />
+                    )}
+                  </button>
                   <input
                     type="range"
                     min="0"
                     max="1"
-                    step="0.1"
+                    step="0.01"
                     value={settings.masterVolume}
                     onChange={handleVolumeChange}
+                    onInput={handleVolumeInput}
                     className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
                   />
                 </div>
@@ -315,7 +446,7 @@ export default function Player() {
           </div>
 
           {/* Affirmation Details */}
-          <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/50">
+          <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/50 mb-6">
             <h3 className="font-semibold text-gray-800 mb-3">
               About this affirmation
             </h3>
@@ -354,7 +485,162 @@ export default function Player() {
               </div>
             </div>
           </div>
+
+          {/* Your Set Playlist */}
+          {affirmations.length > 1 && (
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-200/50 mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-semibold text-gray-800">
+                  Your Set ({affirmations.length})
+                </h3>
+                <button
+                  onClick={() => setShowAll(!showAll)}
+                  className="text-indigo-600 text-sm font-medium"
+                >
+                  {showAll ? "Show Less" : "Show All"}
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {(showAll ? affirmations : affirmations.slice(0, 3)).map(
+                  (affirmation, index) => {
+                    const isEditing = editingId === affirmation.id;
+                    const actualIndex = affirmations.findIndex(
+                      (aff) => aff.id === affirmation.id
+                    );
+                    return (
+                      <div
+                        key={affirmation.id || index}
+                        className={`w-full p-4 rounded-2xl border transition-colors ${
+                          actualIndex === currentIndex
+                            ? "bg-indigo-50 border-indigo-200 text-indigo-800"
+                            : "bg-white/60 border-gray-200/50 text-gray-700"
+                        }`}
+                      >
+                        {isEditing ? (
+                          <div className="space-y-3">
+                            <textarea
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                              rows={3}
+                              autoFocus
+                            />
+                            <div className="flex justify-end space-x-2">
+                              <button
+                                onClick={handleCancelEdit}
+                                disabled={saving}
+                                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50"
+                              >
+                                <X size={16} />
+                              </button>
+                              <button
+                                onClick={handleSaveEdit}
+                                disabled={saving || !editingText.trim()}
+                                className="px-3 py-1 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Check size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-start justify-between gap-3">
+                            <button
+                              onClick={() => selectAffirmation(actualIndex)}
+                              className="flex-1 text-left"
+                            >
+                              <p className="text-sm leading-relaxed">
+                                "{affirmation.text}"
+                              </p>
+                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEdit(affirmation);
+                                }}
+                                className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteClick(affirmation.id);
+                                }}
+                                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                )}
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Delete Confirmation Modal */}
+        {deletingId && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-red-700 flex items-center gap-2">
+                  <Trash2 size={20} className="text-red-600" />
+                  Delete Affirmation
+                </h3>
+                <button
+                  onClick={() => setDeletingId(null)}
+                  className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors"
+                  disabled={saving}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-gray-700">
+                  Are you sure you want to delete this affirmation? This action
+                  cannot be undone.
+                </p>
+              </div>
+
+              <div className="flex space-x-3 mt-6">
+                <Button
+                  variant="ghost"
+                  className="flex-1"
+                  onClick={() => setDeletingId(null)}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  onClick={handleConfirmDelete}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin mr-2" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={18} className="mr-2" />
+                      Delete
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <BottomNavigation />
       </div>

@@ -113,6 +113,13 @@ export const useAudioPlayer = (onTrackEnd?: () => void) => {
     settings.backgroundMusicVolume,
   ]);
 
+  // Expose a function to update volume immediately (for slider)
+  const updateVolumeImmediate = useCallback((volume: number) => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, []);
+
   const loadAudio = useCallback(
     (audioUrl: string | null, backgroundMusicUrl?: string | null) => {
       if (!audioRef.current) return;
@@ -255,5 +262,6 @@ export const useAudioPlayer = (onTrackEnd?: () => void) => {
     pause,
     seek,
     togglePlayback,
+    updateVolumeImmediate,
   };
 };

@@ -507,7 +507,7 @@ app.post("/api/affirmations/:id/generate-audio", async (c) => {
     // Get affirmation from database
     const affirmation = await c.env.DB.prepare(
       `
-      SELECT user_id, text, language, tone FROM affirmations WHERE id = ?
+      SELECT user_id, text, tone FROM affirmations WHERE id = ?
     `
     )
       .bind(affirmationId)
@@ -534,10 +534,11 @@ app.post("/api/affirmations/:id/generate-audio", async (c) => {
       );
     }
 
-    // Get user preferences for language and selected voice
+    // Get user preferences for language, selected voice, and background music
     const preferences = await c.env.DB.prepare(
       `
-      SELECT language, selected_voice FROM user_preferences WHERE user_id = ? ORDER BY created_at DESC LIMIT 1
+      SELECT language, selected_voice, focus_areas, emotional_state, preferred_tone, background_music_url
+      FROM user_preferences WHERE user_id = ? ORDER BY created_at DESC LIMIT 1
     `
     )
       .bind(userId)
@@ -555,6 +556,33 @@ app.post("/api/affirmations/:id/generate-audio", async (c) => {
       `Generating audio for affirmation ${affirmationId} with voice ${voiceName}`
     );
 
+    // Select background music based on preferences
+    let backgroundMusicUrl: string | null = null;
+    if (preferences) {
+      // Check if user has custom background music
+      const customMusicUrl = preferences.background_music_url as string | null;
+      if (customMusicUrl) {
+        backgroundMusicUrl = customMusicUrl;
+      } else {
+        // Auto-select based on focus area and tone
+        const focusAreas = JSON.parse(
+          (preferences.focus_areas as string) || "[]"
+        );
+        const focusArea = focusAreas[0] || "mindfulness";
+        const emotionalState =
+          (preferences.emotional_state as string) || "neutral";
+        const preferredTone =
+          (preferences.preferred_tone as string) || "gentle";
+
+        const selectedStyle = selectBackgroundMusic(
+          focusArea,
+          emotionalState,
+          preferredTone
+        );
+        backgroundMusicUrl = `background-music/${selectedStyle}.mp3`;
+      }
+    }
+
     // Generate audio
     const audioBuffer = await generateSpeech(text, voiceName, language, c.env);
 
@@ -566,15 +594,15 @@ app.post("/api/affirmations/:id/generate-audio", async (c) => {
       },
     });
 
-    // Update audio_url in database
+    // Update audio_url and background_music_url in database
     await c.env.DB.prepare(
       `
       UPDATE affirmations 
-      SET audio_url = ?, updated_at = datetime('now')
+      SET audio_url = ?, background_music_url = ?, updated_at = datetime('now')
       WHERE id = ?
     `
     )
-      .bind(storageKey, affirmationId)
+      .bind(storageKey, backgroundMusicUrl, affirmationId)
       .run();
 
     return c.json({
@@ -1547,6 +1575,96 @@ app.get("/api/background-music/custom/:userId/:filename", async (c) => {
   } catch (error) {
     console.error("Error serving custom background music:", error);
     return c.json({ error: "Failed to serve music" }, 500);
+  }
+});
+
+// Get list of custom background music files for a user
+app.get("/api/background-music/custom", async (c) => {
+  try {
+    const userId = "user_123";
+    const prefix = `background-music/custom/${userId}/`;
+
+    // List all objects with this prefix
+    const objects = await c.env.R2_BUCKET.list({ prefix });
+
+    const musicFiles = objects.objects.map(
+      (obj: { key: string; uploaded?: Date; size: number }) => {
+        const filename = obj.key.replace(prefix, "");
+        return {
+          filename,
+          storage_url: obj.key,
+          audio_url: `/api/background-music/custom/${userId}/${filename}`,
+          uploaded_at: obj.uploaded?.toISOString() || null,
+          size: obj.size,
+        };
+      }
+    );
+
+    // Sort by upload date (newest first)
+    musicFiles.sort(
+      (
+        a: { uploaded_at: string | null },
+        b: { uploaded_at: string | null }
+      ) => {
+        if (!a.uploaded_at || !b.uploaded_at) return 0;
+        return (
+          new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
+        );
+      }
+    );
+
+    return c.json({
+      success: true,
+      musicFiles,
+    });
+  } catch (error) {
+    console.error("Error fetching custom music list:", error);
+    return c.json({ error: "Failed to fetch music list" }, 500);
+  }
+});
+
+// Delete custom background music file
+app.delete("/api/background-music/custom/:userId/:filename", async (c) => {
+  try {
+    const userId = c.req.param("userId");
+    const filename = c.req.param("filename");
+    const storageKey = `background-music/custom/${userId}/${filename}`;
+
+    // Delete from R2
+    await c.env.R2_BUCKET.delete(storageKey);
+
+    // Check if this was the active music in user preferences
+    const preferences = await c.env.DB.prepare(
+      `
+      SELECT background_music_url FROM user_preferences 
+      WHERE user_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `
+    )
+      .bind(userId)
+      .first();
+
+    // If this was the active music, clear it from preferences
+    if (preferences && preferences.background_music_url === storageKey) {
+      await c.env.DB.prepare(
+        `
+        UPDATE user_preferences 
+        SET background_music_url = NULL, updated_at = datetime('now')
+        WHERE user_id = ? AND id = (SELECT id FROM user_preferences WHERE user_id = ? ORDER BY created_at DESC LIMIT 1)
+      `
+      )
+        .bind(userId, userId)
+        .run();
+    }
+
+    return c.json({
+      success: true,
+      message: "Music file deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting custom music:", error);
+    return c.json({ error: "Failed to delete music file" }, 500);
   }
 });
 

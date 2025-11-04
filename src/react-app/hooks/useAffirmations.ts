@@ -311,6 +311,7 @@ export const useAffirmations = () => {
 
   const updateAffirmation = useCallback(async (id: number, text: string) => {
     try {
+      // Update the text first
       const response = await fetch(`/api/affirmations/${id}`, {
         method: "PATCH",
         headers: {
@@ -321,9 +322,97 @@ export const useAffirmations = () => {
 
       const data = await response.json();
       if (data.success) {
+        // Update local state with new text
         setAffirmations((prev) =>
           prev.map((aff) => (aff.id === id ? { ...aff, text } : aff))
         );
+
+        // Regenerate audio with the new text
+        try {
+          const audioResponse = await fetch(
+            `/api/affirmations/${id}/generate-audio`,
+            {
+              method: "POST",
+            }
+          );
+
+          const audioData = await audioResponse.json();
+          if (audioData.success && audioData.audioUrl) {
+            // Reload the affirmation from server to get updated audio_url and background_music_url
+            try {
+              const reloadResponse = await fetch(`/api/affirmations/user_123`);
+              const reloadData = await reloadResponse.json();
+              if (reloadData.success && reloadData.affirmations) {
+                const updatedAffirmation = reloadData.affirmations.find(
+                  (aff: Affirmation) => aff.id === id
+                );
+                if (updatedAffirmation) {
+                  // Convert storage key to API URL if needed
+                  let audioUrl = updatedAffirmation.audio_url;
+                  if (
+                    audioUrl &&
+                    audioUrl.startsWith("affirmations/") &&
+                    updatedAffirmation.id
+                  ) {
+                    audioUrl = `/api/affirmations/${updatedAffirmation.id}/audio`;
+                  }
+
+                  // Convert background music storage key to API URL if needed
+                  let backgroundMusicUrl = updatedAffirmation.background_music_url;
+                  if (backgroundMusicUrl) {
+                    if (
+                      backgroundMusicUrl.startsWith("background-music/") &&
+                      !backgroundMusicUrl.startsWith("background-music/custom/")
+                    ) {
+                      // Built-in music
+                      const style = backgroundMusicUrl
+                        .replace("background-music/", "")
+                        .replace(".mp3", "");
+                      backgroundMusicUrl = `/api/background-music/${style}`;
+                    } else if (
+                      backgroundMusicUrl.startsWith("background-music/custom/")
+                    ) {
+                      // Custom music
+                      const parts = backgroundMusicUrl
+                        .replace("background-music/custom/", "")
+                        .split("/");
+                      const userId = parts[0];
+                      const filename = parts[1];
+                      backgroundMusicUrl = `/api/background-music/custom/${userId}/${filename}`;
+                    }
+                  }
+
+                  // Update local state with new text, audio URL, and background music URL
+                  setAffirmations((prev) =>
+                    prev.map((aff) =>
+                      aff.id === id
+                        ? {
+                            ...aff,
+                            text,
+                            audio_url: audioUrl,
+                            background_music_url: backgroundMusicUrl,
+                          }
+                        : aff
+                    )
+                  );
+                }
+              }
+            } catch (reloadErr) {
+              console.error("Error reloading affirmation:", reloadErr);
+              // Fallback: just update with the audio URL we got
+              setAffirmations((prev) =>
+                prev.map((aff) =>
+                  aff.id === id
+                    ? { ...aff, text, audio_url: audioData.audioUrl }
+                    : aff
+                )
+              );
+            }
+          }
+        } catch (audioErr) {
+          console.error("Error generating audio:", audioErr);
+          // Don't throw - text update succeeded, audio generation failed
+        }
       } else {
         throw new Error(data.error || "Failed to update affirmation");
       }

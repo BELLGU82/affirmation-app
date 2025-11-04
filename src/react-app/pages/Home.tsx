@@ -3,7 +3,7 @@ import GradientBackground from "@/react-app/components/GradientBackground";
 import BottomNavigation from "@/react-app/components/BottomNavigation";
 import Button from "@/react-app/components/Button";
 import MoodTrackingModal from "@/react-app/components/MoodTrackingModal";
-import { Plus, Play, Heart, Sparkles, Loader2, Pencil, Trash2, X, Check } from "lucide-react";
+import { Plus, Play, Heart, Sparkles, Loader2, Trash2, X } from "lucide-react";
 import { useAffirmations } from "@/react-app/hooks/useAffirmations";
 import { useMoodTracking } from "@/react-app/hooks/useMoodTracking";
 
@@ -15,10 +15,8 @@ export default function Home() {
     error,
     generateAffirmations,
     loadAffirmations,
-    selectAffirmation,
     toggleFavorite,
     currentIndex,
-    updateAffirmation,
     deleteAffirmation,
   } = useAffirmations();
 
@@ -29,11 +27,8 @@ export default function Home() {
 
   const { saveMoodTracking } = useMoodTracking();
 
-  const [showAll, setShowAll] = useState(false);
   const [showMoodBefore, setShowMoodBefore] = useState(false);
   const [pendingGenerate, setPendingGenerate] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingText, setEditingText] = useState<string>("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -70,39 +65,6 @@ export default function Home() {
   const handleToggleFavorite = async () => {
     if (currentAffirmation) {
       await toggleFavorite(currentIndex);
-    }
-  };
-
-  const handleStartEdit = (affirmation: { id?: number; text: string }) => {
-    if (affirmation.id) {
-      setEditingId(affirmation.id);
-      setEditingText(affirmation.text);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditingText("");
-  };
-
-  const handleSaveEdit = async () => {
-    if (editingId && editingText.trim()) {
-      setSaving(true);
-      try {
-        await updateAffirmation(editingId, editingText.trim());
-        setEditingId(null);
-        setEditingText("");
-      } catch (error) {
-        console.error("Failed to update affirmation:", error);
-      } finally {
-        setSaving(false);
-      }
-    }
-  };
-
-  const handleDeleteClick = (affirmationId?: number) => {
-    if (affirmationId) {
-      setDeletingId(affirmationId);
     }
   };
 
@@ -215,102 +177,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Affirmation List */}
-            {affirmations.length > 1 && (
-              <div className="mb-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-semibold text-gray-800">
-                    Your Set ({affirmations.length})
-                  </h3>
-                  <button
-                    onClick={() => setShowAll(!showAll)}
-                    className="text-indigo-600 text-sm font-medium"
-                  >
-                    {showAll ? "Show Less" : "Show All"}
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {(showAll ? affirmations : affirmations.slice(0, 3)).map(
-                    (affirmation, index) => {
-                      const isEditing = editingId === affirmation.id;
-                      return (
-                        <div
-                          key={affirmation.id || index}
-                          className={`w-full p-4 rounded-2xl border transition-colors ${
-                            index === currentIndex
-                              ? "bg-indigo-50 border-indigo-200 text-indigo-800"
-                              : "bg-white/60 border-gray-200/50 text-gray-700"
-                          }`}
-                        >
-                          {isEditing ? (
-                            <div className="space-y-3">
-                              <textarea
-                                value={editingText}
-                                onChange={(e) => setEditingText(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                                rows={3}
-                                autoFocus
-                              />
-                              <div className="flex justify-end space-x-2">
-                                <button
-                                  onClick={handleCancelEdit}
-                                  disabled={saving}
-                                  className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50"
-                                >
-                                  <X size={16} />
-                                </button>
-                                <button
-                                  onClick={handleSaveEdit}
-                                  disabled={saving || !editingText.trim()}
-                                  className="px-3 py-1 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  <Check size={16} />
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-start justify-between gap-3">
-                              <button
-                                onClick={() => selectAffirmation(index)}
-                                className="flex-1 text-left"
-                              >
-                                <p className="text-sm leading-relaxed">
-                                  "{affirmation.text}"
-                                </p>
-                              </button>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleStartEdit(affirmation);
-                                  }}
-                                  className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                  title="Edit"
-                                >
-                                  <Pencil size={16} />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteClick(affirmation.id);
-                                  }}
-                                  className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                  title="Delete"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* Generate New Button */}
             <Button
               onClick={handleGenerateNew}
@@ -403,7 +269,8 @@ export default function Home() {
 
             <div className="space-y-4">
               <p className="text-gray-700">
-                Are you sure you want to delete this affirmation? This action cannot be undone.
+                Are you sure you want to delete this affirmation? This action
+                cannot be undone.
               </p>
             </div>
 

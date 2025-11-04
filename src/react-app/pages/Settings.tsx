@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import GradientBackground from "@/react-app/components/GradientBackground";
 import BottomNavigation from "@/react-app/components/BottomNavigation";
 import Button from "@/react-app/components/Button";
-import NotificationsModal, { NotificationSettings } from "@/react-app/components/NotificationsModal";
+import NotificationsModal, {
+  NotificationSettings,
+} from "@/react-app/components/NotificationsModal";
 import MoodTrackingHistory from "@/react-app/components/MoodTrackingHistory";
 import { useAudioSettings } from "@/react-app/hooks/useAudioSettings";
 import { useProfile } from "@/react-app/hooks/useProfile";
-import { useMoodTracking } from "@/react-app/hooks/useMoodTracking";
 import {
   User,
   Volume2,
@@ -27,6 +28,8 @@ import {
   Loader2,
   Mic,
   Pause,
+  Plus,
+  Check,
 } from "lucide-react";
 import VoiceRecorder from "@/react-app/components/VoiceRecorder";
 import { useVoiceSamples } from "@/react-app/hooks/useVoiceSamples";
@@ -62,48 +65,114 @@ export default function Settings() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showRecorder, setShowRecorder] = useState(false);
   const [uploading, setUploading] = useState(false);
-  
-  const { playingVoice, loading: voiceLoading, playVoiceSample } = useVoiceSamples();
-  
+  const [newInterest, setNewInterest] = useState("");
+  const [uploadingMusic, setUploadingMusic] = useState(false);
+  const [musicUploadSuccess, setMusicUploadSuccess] = useState(false);
+  const [customMusicList, setCustomMusicList] = useState<
+    Array<{
+      filename: string;
+      storage_url: string;
+      audio_url: string;
+      uploaded_at: string | null;
+      size: number;
+    }>
+  >([]);
+  const [loadingMusicList, setLoadingMusicList] = useState(false);
+  const [deletingMusic, setDeletingMusic] = useState<string | null>(null);
+
+  const {
+    playingVoice,
+    loading: voiceLoading,
+    playVoiceSample,
+  } = useVoiceSamples();
+
+  // Load custom music list
+  const loadCustomMusicList = async () => {
+    setLoadingMusicList(true);
+    try {
+      const response = await fetch("/api/background-music/custom");
+      const data = await response.json();
+      if (data.success && data.musicFiles) {
+        setCustomMusicList(data.musicFiles);
+      }
+    } catch (error) {
+      console.error("Error loading custom music list:", error);
+    } finally {
+      setLoadingMusicList(false);
+    }
+  };
+
+  // Delete custom music
+  const handleDeleteMusic = async (filename: string) => {
+    setDeletingMusic(filename);
+    try {
+      const userId = "user_123";
+      const response = await fetch(
+        `/api/background-music/custom/${userId}/${filename}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (response.ok) {
+        // Reload the list
+        await loadCustomMusicList();
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert(errorData.error || "Failed to delete music file");
+      }
+    } catch (error) {
+      console.error("Error deleting music:", error);
+      alert("Error deleting music file. Please try again.");
+    } finally {
+      setDeletingMusic(null);
+    }
+  };
+
+  // Load music list when component mounts or when music is uploaded
+  useEffect(() => {
+    loadCustomMusicList();
+  }, [musicUploadSuccess]);
+
   // Voice options matching VoiceSetup
   const voiceOptions = [
-    { 
-      id: 'sarah', 
-      name: 'Sarah', 
-      description: 'Warm and nurturing', 
-      gender: 'female',
-      previewText: 'I am worthy of love and respect. My voice matters.'
+    {
+      id: "sarah",
+      name: "Sarah",
+      description: "Warm and nurturing",
+      gender: "female",
+      previewText: "I am worthy of love and respect. My voice matters.",
     },
-    { 
-      id: 'alex', 
-      name: 'Alex', 
-      description: 'Confident and clear', 
-      gender: 'male',
-      previewText: 'I am capable of achieving my goals. I trust my abilities.'
+    {
+      id: "alex",
+      name: "Alex",
+      description: "Confident and clear",
+      gender: "male",
+      previewText: "I am capable of achieving my goals. I trust my abilities.",
     },
-    { 
-      id: 'maya', 
-      name: 'Maya', 
-      description: 'Gentle and soothing', 
-      gender: 'female',
-      previewText: 'I am gentle with myself. I choose peace and understanding.'
+    {
+      id: "maya",
+      name: "Maya",
+      description: "Gentle and soothing",
+      gender: "female",
+      previewText: "I am gentle with myself. I choose peace and understanding.",
     },
-    { 
-      id: 'james', 
-      name: 'James', 
-      description: 'Deep and calming', 
-      gender: 'male',
-      previewText: 'I am calm and centered. I navigate challenges with wisdom.'
+    {
+      id: "james",
+      name: "James",
+      description: "Deep and calming",
+      gender: "male",
+      previewText: "I am calm and centered. I navigate challenges with wisdom.",
     },
-    { 
-      id: 'luna', 
-      name: 'Luna', 
-      description: 'Peaceful and wise', 
-      gender: 'female',
-      previewText: 'I am peaceful and wise. I trust the journey ahead.'
-    }
+    {
+      id: "luna",
+      name: "Luna",
+      description: "Peaceful and wise",
+      gender: "female",
+      previewText: "I am peaceful and wise. I trust the journey ahead.",
+    },
   ];
-  
+
   interface CustomVoice {
     id: number;
     voice_type: string;
@@ -111,114 +180,124 @@ export default function Settings() {
     is_active: boolean;
     created_at?: string;
   }
-  
+
   const [customVoices, setCustomVoices] = useState<CustomVoice[]>([]);
   const [selectedVoice, setSelectedVoice] = useState<string>(
-    (preferences as any).selected_voice || 'sarah'
+    preferences.selected_voice || "sarah"
   );
-  
+
   // Load custom voices on mount
   useEffect(() => {
     const loadCustomVoices = async () => {
       try {
-        const response = await fetch('/api/user-voices');
+        const response = await fetch("/api/user-voices");
         if (response.ok) {
           const voices = await response.json();
           setCustomVoices(voices);
         }
       } catch (error) {
-        console.error('Failed to load custom voices:', error);
+        console.error("Failed to load custom voices:", error);
       }
     };
-    
+
     if (showVoiceSelection) {
       loadCustomVoices();
     }
   }, [showVoiceSelection]);
-  
+
   // Load selected voice from preferences
   useEffect(() => {
-    const voice = (preferences as any).selected_voice;
+    const voice = preferences.selected_voice;
     if (voice) {
       setSelectedVoice(voice);
     }
   }, [preferences]);
-  
+
   // Notification settings state
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
-    dailyReminder: true,
-    reminderTime: '09:00',
-    newAffirmations: true,
-    moodTracking: true,
-    weeklySummary: false
-  });
+  const [notificationSettings, setNotificationSettings] =
+    useState<NotificationSettings>({
+      dailyReminder: true,
+      reminderTime: "09:00",
+      newAffirmations: true,
+      moodTracking: true,
+      weeklySummary: false,
+    });
 
   // Load notification settings from localStorage
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('notification-settings');
+      const stored = localStorage.getItem("notification-settings");
       if (stored) {
         setNotificationSettings(JSON.parse(stored));
       }
     } catch (error) {
-      console.error('Error loading notification settings:', error);
+      console.error("Error loading notification settings:", error);
     }
   }, []);
 
   const handleSaveNotifications = (settings: NotificationSettings) => {
     setNotificationSettings(settings);
     try {
-      localStorage.setItem('notification-settings', JSON.stringify(settings));
+      localStorage.setItem("notification-settings", JSON.stringify(settings));
     } catch (error) {
-      console.error('Error saving notification settings:', error);
+      console.error("Error saving notification settings:", error);
     }
   };
   const handleSaveProfile = async () => {
-    await updateProfile(editedProfile);
-    setShowProfileEdit(false);
+    try {
+      await updateProfile(editedProfile);
+      setShowProfileEdit(false);
+    } catch (error) {
+      console.error("Failed to save profile:", error);
+      // Modal stays open on error so user can retry
+    }
   };
 
   const handleSavePreferences = async () => {
-    await updatePreferences(editedPreferences);
-    setShowPreferences(false);
+    try {
+      await updatePreferences(editedPreferences);
+      setShowPreferences(false);
+    } catch (error) {
+      console.error("Failed to save preferences:", error);
+      // Modal stays open on error so user can retry
+    }
   };
-  
+
   const handleVoiceRecorded = async (audioBlob: Blob, filename: string) => {
     setUploading(true);
     try {
       const formData = new FormData();
-      formData.append('audio', audioBlob, filename);
-      
-      const response = await fetch('/api/user-voices/upload', {
-        method: 'POST',
+      formData.append("audio", audioBlob, filename);
+
+      const response = await fetch("/api/user-voices/upload", {
+        method: "POST",
         body: formData,
       });
-      
+
       if (response.ok) {
         const newVoice = await response.json();
-        setCustomVoices(prev => [...prev, newVoice]);
+        setCustomVoices((prev) => [...prev, newVoice]);
         setSelectedVoice(`custom_${newVoice.id}`);
         setShowRecorder(false);
       } else {
-        console.error('Failed to upload voice');
+        console.error("Failed to upload voice");
       }
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error("Upload error:", error);
     } finally {
       setUploading(false);
     }
   };
-  
+
   const handleSaveVoiceSelection = async () => {
     try {
-      const userId = 'user_123';
       await updatePreferences({
         ...editedPreferences,
-        selected_voice: selectedVoice as any,
+        selected_voice: selectedVoice,
       });
       setShowVoiceSelection(false);
     } catch (error) {
-      console.error('Failed to save voice selection:', error);
+      console.error("Failed to save voice selection:", error);
     }
   };
 
@@ -267,14 +346,26 @@ export default function Settings() {
     {
       title: "Preferences",
       items: [
-        { icon: Bell, label: "Notifications", action: () => setShowNotifications(true) },
+        {
+          icon: Bell,
+          label: "Notifications",
+          action: () => setShowNotifications(true),
+        },
         {
           icon: Moon,
           label: "Focus Areas & Preferences",
           action: () => setShowPreferences(true),
         },
-        { icon: Volume2, label: "Voice Selection", action: () => setShowVoiceSelection(true) },
-        { icon: Heart, label: "Mood Tracking", action: () => setShowMoodTracking(true) },
+        {
+          icon: Volume2,
+          label: "Voice Selection",
+          action: () => setShowVoiceSelection(true),
+        },
+        {
+          icon: Heart,
+          label: "Mood Tracking",
+          action: () => setShowMoodTracking(true),
+        },
       ],
     },
     {
@@ -460,16 +551,19 @@ export default function Settings() {
                       <option value="ambient/calm">Ambient - Calm</option>
                       <option value="ambient/energy">Ambient - Energy</option>
                       <option value="piano/gentle">Piano - Gentle</option>
-                      <option value="piano/motivating">Piano - Motivating</option>
+                      <option value="piano/motivating">
+                        Piano - Motivating
+                      </option>
                       <option value="nature/peaceful">Nature - Peaceful</option>
                       <option value="solfeggio/528hz">Solfeggio - 528Hz</option>
                       <option value="custom">Custom Upload</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
-                      Music will be selected automatically based on your focus area and emotional state
+                      Music will be selected automatically based on your focus
+                      area and emotional state
                     </p>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Upload Custom Music
@@ -480,32 +574,139 @@ export default function Settings() {
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
+                          setUploadingMusic(true);
+                          setMusicUploadSuccess(false);
                           try {
                             const formData = new FormData();
                             formData.append("audio", file);
-                            
-                            const response = await fetch("/api/background-music/upload", {
-                              method: "POST",
-                              body: formData,
-                            });
-                            
+
+                            const response = await fetch(
+                              "/api/background-music/upload",
+                              {
+                                method: "POST",
+                                body: formData,
+                              }
+                            );
+
                             if (response.ok) {
                               const data = await response.json();
                               console.log("Custom music uploaded:", data);
+
+                              // Update preferences with the new background music URL
+                              // The API already saves it to user_preferences, but we should refresh
+                              // to ensure UI is in sync
+                              try {
+                                await updatePreferences({
+                                  ...editedPreferences,
+                                });
+                                setMusicUploadSuccess(true);
+                                // Reload music list
+                                await loadCustomMusicList();
+
+                                // Clear success message after 3 seconds
+                                setTimeout(() => {
+                                  setMusicUploadSuccess(false);
+                                }, 3000);
+                              } catch (prefError) {
+                                console.error(
+                                  "Failed to update preferences:",
+                                  prefError
+                                );
+                              }
                             } else {
-                              console.error("Failed to upload music");
+                              const errorData = await response
+                                .json()
+                                .catch(() => ({}));
+                              console.error(
+                                "Failed to upload music:",
+                                errorData.error || "Unknown error"
+                              );
+                              alert(
+                                "Failed to upload music. Please try again."
+                              );
                             }
                           } catch (error) {
                             console.error("Error uploading music:", error);
+                            alert("Error uploading music. Please try again.");
+                          } finally {
+                            setUploadingMusic(false);
+                            // Reset file input
+                            e.target.value = "";
                           }
                         }
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                      disabled={uploadingMusic}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Upload your own background music file (MP3, WAV, etc.)
-                    </p>
+                    {uploadingMusic && (
+                      <p className="text-xs text-indigo-600 mt-1 flex items-center gap-2">
+                        <Loader2 size={12} className="animate-spin" />
+                        Uploading music...
+                      </p>
+                    )}
+                    {musicUploadSuccess && (
+                      <p className="text-xs text-green-600 mt-1 flex items-center gap-2">
+                        <Check size={12} />
+                        Music uploaded successfully! It will be used in new
+                        affirmations.
+                      </p>
+                    )}
+                    {!uploadingMusic && !musicUploadSuccess && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Upload your own background music file (MP3, WAV, etc.)
+                      </p>
+                    )}
                   </div>
+
+                  {/* Custom Music List */}
+                  {customMusicList.length > 0 && (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Your Custom Music Files ({customMusicList.length})
+                      </label>
+                      <div className="space-y-2">
+                        {customMusicList.map((music) => (
+                          <div
+                            key={music.filename}
+                            className="flex items-center justify-between p-3 bg-white/60 border border-gray-200/50 rounded-lg"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-800 truncate">
+                                {music.filename}
+                              </p>
+                              {music.uploaded_at && (
+                                <p className="text-xs text-gray-500">
+                                  Uploaded:{" "}
+                                  {new Date(music.uploaded_at).toLocaleDateString()}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 ml-3">
+                              <button
+                                onClick={() => handleDeleteMusic(music.filename)}
+                                disabled={deletingMusic === music.filename}
+                                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                title="Delete"
+                              >
+                                {deletingMusic === music.filename ? (
+                                  <Loader2 size={16} className="animate-spin" />
+                                ) : (
+                                  <Trash2 size={16} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {loadingMusicList && (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
+                      <Loader2 size={16} className="animate-spin" />
+                      Loading music files...
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -558,7 +759,7 @@ export default function Settings() {
 
           {/* Danger Zone */}
           <div>
-            <h2 className="text-lg font-semibold text-gray-800 mb-4 text-red-600">
+            <h2 className="text-lg font-semibold text-red-600 mb-4">
               Danger Zone
             </h2>
             <div className="bg-white/60 backdrop-blur-sm rounded-2xl border border-red-200/50 overflow-hidden">
@@ -654,23 +855,40 @@ export default function Settings() {
                   Age
                 </label>
                 <input
-                  type="number"
-                  min="13"
-                  max="120"
-                  value={editedProfile.age || ""}
+                  type="text"
+                  value={
+                    editedProfile.age !== undefined
+                      ? editedProfile.age.toString()
+                      : ""
+                  }
                   onChange={(e) => {
-                    const value = e.target.value === "" ? undefined : parseInt(e.target.value);
-                    if (value === undefined || (value >= 13 && value <= 120)) {
+                    const inputValue = e.target.value;
+                    // Allow empty input
+                    if (inputValue === "") {
                       setEditedProfile((prev) => ({
                         ...prev,
-                        age: value,
+                        age: undefined,
                       }));
+                      return;
+                    }
+                    // Only allow numeric input (allow typing numbers freely)
+                    if (/^\d*$/.test(inputValue)) {
+                      const numValue = parseInt(inputValue, 10);
+                      // Store the number if it's valid, even if out of range (user might still be typing)
+                      if (!isNaN(numValue)) {
+                        setEditedProfile((prev) => ({
+                          ...prev,
+                          age: numValue,
+                        }));
+                      }
                     }
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   placeholder="Enter your age"
                 />
-                <p className="text-xs text-gray-500 mt-1">Must be between 13 and 120</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Must be between 13 and 120
+                </p>
               </div>
 
               <div>
@@ -865,6 +1083,66 @@ export default function Settings() {
                 <label className="block text-sm font-medium text-gray-700 mb-3">
                   Interests
                 </label>
+                {/* Add new interest input */}
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={newInterest}
+                    onChange={(e) => setNewInterest(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === "Enter" && newInterest.trim()) {
+                        e.preventDefault();
+                        const trimmedInterest = newInterest
+                          .trim()
+                          .toLowerCase();
+                        const currentInterests =
+                          editedPreferences.interests || [];
+                        // Check for duplicates (case-insensitive)
+                        if (
+                          !currentInterests.some(
+                            (i) => i.toLowerCase() === trimmedInterest
+                          )
+                        ) {
+                          setEditedPreferences((prev) => ({
+                            ...prev,
+                            interests: [...currentInterests, trimmedInterest],
+                          }));
+                          setNewInterest("");
+                        }
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+                    placeholder="Add new interest..."
+                  />
+                  <button
+                    onClick={() => {
+                      if (newInterest.trim()) {
+                        const trimmedInterest = newInterest
+                          .trim()
+                          .toLowerCase();
+                        const currentInterests =
+                          editedPreferences.interests || [];
+                        // Check for duplicates (case-insensitive)
+                        if (
+                          !currentInterests.some(
+                            (i) => i.toLowerCase() === trimmedInterest
+                          )
+                        ) {
+                          setEditedPreferences((prev) => ({
+                            ...prev,
+                            interests: [...currentInterests, trimmedInterest],
+                          }));
+                          setNewInterest("");
+                        }
+                      }
+                    }}
+                    disabled={!newInterest.trim()}
+                    className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                    title="Add interest"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {[
                     "technology",
@@ -883,9 +1161,13 @@ export default function Settings() {
                     <label key={interest} className="flex items-center">
                       <input
                         type="checkbox"
-                        checked={editedPreferences.interests?.includes(interest) || false}
+                        checked={
+                          editedPreferences.interests?.includes(interest) ||
+                          false
+                        }
                         onChange={(e) => {
-                          const currentInterests = editedPreferences.interests || [];
+                          const currentInterests =
+                            editedPreferences.interests || [];
                           if (e.target.checked) {
                             setEditedPreferences((prev) => ({
                               ...prev,
@@ -894,7 +1176,9 @@ export default function Settings() {
                           } else {
                             setEditedPreferences((prev) => ({
                               ...prev,
-                              interests: currentInterests.filter((i) => i !== interest),
+                              interests: currentInterests.filter(
+                                (i) => i !== interest
+                              ),
                             }));
                           }
                         }}
@@ -905,6 +1189,49 @@ export default function Settings() {
                       </span>
                     </label>
                   ))}
+                  {/* Custom interests (added by user) */}
+                  {editedPreferences.interests
+                    ?.filter(
+                      (interest) =>
+                        ![
+                          "technology",
+                          "health & wellness",
+                          "art & creativity",
+                          "music",
+                          "sports",
+                          "travel",
+                          "reading",
+                          "cooking",
+                          "photography",
+                          "nature",
+                          "meditation",
+                          "fitness",
+                        ].includes(interest.toLowerCase())
+                    )
+                    .map((interest) => (
+                      <label key={interest} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={true}
+                          onChange={(e) => {
+                            const currentInterests =
+                              editedPreferences.interests || [];
+                            if (!e.target.checked) {
+                              setEditedPreferences((prev) => ({
+                                ...prev,
+                                interests: currentInterests.filter(
+                                  (i) => i !== interest
+                                ),
+                              }));
+                            }
+                          }}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="ml-2 text-sm text-gray-700 capitalize">
+                          {interest}
+                        </span>
+                      </label>
+                    ))}
                 </div>
               </div>
             </div>
@@ -975,7 +1302,7 @@ export default function Settings() {
                 <X size={16} />
               </button>
             </div>
-            
+
             <div className="space-y-3 mb-6">
               {/* Demo Voices */}
               {voiceOptions.map((voice) => (
@@ -983,8 +1310,8 @@ export default function Settings() {
                   key={voice.id}
                   className={`p-4 rounded-xl border-2 transition-all duration-300 ${
                     selectedVoice === voice.id
-                      ? 'border-indigo-500 bg-gradient-to-br from-indigo-50 to-purple-50 shadow-lg'
-                      : 'border-gray-200 bg-white/80 backdrop-blur-sm'
+                      ? "border-indigo-500 bg-gradient-to-br from-indigo-50 to-purple-50 shadow-lg"
+                      : "border-gray-200 bg-white/80 backdrop-blur-sm"
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -992,23 +1319,27 @@ export default function Settings() {
                       onClick={() => setSelectedVoice(voice.id)}
                       className="flex-1 text-left"
                     >
-                      <div className="font-medium text-gray-800 mb-1">{voice.name}</div>
-                      <div className="text-sm text-gray-600">{voice.description}</div>
+                      <div className="font-medium text-gray-800 mb-1">
+                        {voice.name}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        {voice.description}
+                      </div>
                     </button>
-                    
+
                     <button
                       onClick={async () => {
                         try {
                           const previewUrl = `/api/text-to-speech/preview`;
                           const response = await fetch(previewUrl, {
-                            method: 'POST',
+                            method: "POST",
                             headers: {
-                              'Content-Type': 'application/json',
+                              "Content-Type": "application/json",
                             },
                             body: JSON.stringify({
                               text: voice.previewText,
                               voiceName: voice.id,
-                              language: 'en',
+                              language: "en",
                             }),
                           });
 
@@ -1017,15 +1348,19 @@ export default function Settings() {
                             const blobUrl = URL.createObjectURL(audioBlob);
                             await playVoiceSample(voice.id, blobUrl);
                           } else {
-                            console.error('Failed to generate preview');
+                            console.error("Failed to generate preview");
                           }
                         } catch (error) {
-                          console.error('Failed to play voice:', error);
+                          console.error("Failed to play voice:", error);
                         }
                       }}
                       disabled={voiceLoading}
                       className="ml-4 w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white shadow-lg hover:shadow-xl transition-shadow disabled:opacity-50"
-                      title={playingVoice === voice.id ? 'Click to stop' : 'Click to preview'}
+                      title={
+                        playingVoice === voice.id
+                          ? "Click to stop"
+                          : "Click to preview"
+                      }
                     >
                       {voiceLoading && playingVoice === voice.id ? (
                         <Loader2 size={16} className="animate-spin" />
@@ -1038,15 +1373,15 @@ export default function Settings() {
                   </div>
                 </div>
               ))}
-              
+
               {/* Custom voices */}
               {customVoices.map((voice) => (
                 <div
                   key={`custom_${voice.id}`}
                   className={`p-4 rounded-xl border-2 transition-all duration-300 ${
                     selectedVoice === `custom_${voice.id}`
-                      ? 'border-green-500 bg-gradient-to-br from-green-50 to-emerald-50 shadow-lg'
-                      : 'border-gray-200 bg-white/80 backdrop-blur-sm'
+                      ? "border-green-500 bg-gradient-to-br from-green-50 to-emerald-50 shadow-lg"
+                      : "border-gray-200 bg-white/80 backdrop-blur-sm"
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -1058,11 +1393,18 @@ export default function Settings() {
                         <Mic size={16} className="text-green-600" />
                         My Voice
                       </div>
-                      <div className="text-sm text-gray-600">Your personalized voice</div>
+                      <div className="text-sm text-gray-600">
+                        Your personalized voice
+                      </div>
                     </button>
-                    
+
                     <button
-                      onClick={() => playVoiceSample(`custom_${voice.id}`, `/api/user-voices/${voice.id}/audio`)}
+                      onClick={() =>
+                        playVoiceSample(
+                          `custom_${voice.id}`,
+                          `/api/user-voices/${voice.id}/audio`
+                        )
+                      }
                       disabled={voiceLoading}
                       className="ml-4 w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white shadow-lg hover:shadow-xl transition-shadow disabled:opacity-50"
                     >
@@ -1077,7 +1419,7 @@ export default function Settings() {
                   </div>
                 </div>
               ))}
-              
+
               {/* Add custom voice button */}
               <button
                 onClick={() => setShowRecorder(true)}
@@ -1087,12 +1429,12 @@ export default function Settings() {
                 <div className="flex items-center justify-center gap-3 text-gray-600 hover:text-indigo-600">
                   <Mic size={20} />
                   <span className="font-medium">
-                    {uploading ? 'Uploading...' : 'Record My Voice'}
+                    {uploading ? "Uploading..." : "Record My Voice"}
                   </span>
                 </div>
               </button>
             </div>
-            
+
             <div className="flex space-x-3">
               <Button
                 variant="ghost"
@@ -1112,7 +1454,7 @@ export default function Settings() {
           </div>
         </div>
       )}
-      
+
       {/* Voice Recorder Modal */}
       {showRecorder && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1142,7 +1484,8 @@ export default function Settings() {
 
             <div className="space-y-4">
               <p className="text-gray-700">
-                Are you sure you want to delete all your data? This action cannot be undone.
+                Are you sure you want to delete all your data? This action
+                cannot be undone.
               </p>
               <div className="bg-red-50 border border-red-200 rounded-xl p-3">
                 <p className="text-sm text-red-700 font-medium mb-2">
