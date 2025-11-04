@@ -92,11 +92,17 @@ export default function Settings() {
     try {
       const response = await fetch("/api/background-music/custom");
       const data = await response.json();
+      console.log("Custom music list response:", data);
       if (data.success && data.musicFiles) {
         setCustomMusicList(data.musicFiles);
+        console.log(`Loaded ${data.musicFiles.length} custom music files`);
+      } else {
+        console.warn("Failed to load custom music list:", data);
+        setCustomMusicList([]);
       }
     } catch (error) {
       console.error("Error loading custom music list:", error);
+      setCustomMusicList([]);
     } finally {
       setLoadingMusicList(false);
     }
@@ -129,9 +135,18 @@ export default function Settings() {
     }
   };
 
-  // Load music list when component mounts or when music is uploaded
+  // Load music list when component mounts
   useEffect(() => {
     loadCustomMusicList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Load on mount only
+
+  // Also reload when music is uploaded successfully
+  useEffect(() => {
+    if (musicUploadSuccess) {
+      loadCustomMusicList();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [musicUploadSuccess]);
 
   // Voice options matching VoiceSetup
@@ -1534,3 +1549,4 @@ export default function Settings() {
     </GradientBackground>
   );
 }
+

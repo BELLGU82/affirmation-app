@@ -24,24 +24,24 @@ function selectBackgroundMusic(
 ): string {
   // Focus Area → Music Style mapping
   const focusAreaMap: Record<string, string[]> = {
-    calm: ["ambient/calm", "piano/gentle"],
-    anxiety: ["ambient/calm", "piano/gentle"],
-    stress: ["ambient/calm", "piano/gentle"],
-    energy: ["ambient/energy", "piano/motivating"],
-    motivation: ["ambient/energy", "piano/motivating"],
-    mindfulness: ["nature/peaceful", "solfeggio/528hz"],
-    "self-love": ["nature/peaceful", "solfeggio/528hz"],
+    calm: ["ambient/calm", "piano/gentle", "greento-blue"],
+    anxiety: ["ambient/calm", "piano/gentle", "greento-blue"],
+    stress: ["ambient/calm", "piano/gentle", "greento-blue"],
+    energy: ["ambient/energy", "piano/motivating", "idea-10"],
+    motivation: ["ambient/energy", "piano/motivating", "idea-10"],
+    mindfulness: ["nature/peaceful", "solfeggio/528hz", "greento-blue"],
+    "self-love": ["nature/peaceful", "solfeggio/528hz", "greento-blue"],
   };
 
   // Emotional Tone → Music selection
   const toneMap: Record<string, string[]> = {
-    gratitude: ["piano/gentle"],
-    confidence: ["ambient/energy"],
-    gentle: ["piano/gentle"],
-    empowering: ["ambient/energy"],
-    nurturing: ["piano/gentle"],
-    motivating: ["piano/motivating"],
-    calming: ["ambient/calm"],
+    gratitude: ["piano/gentle", "greento-blue"],
+    confidence: ["ambient/energy", "idea-10"],
+    gentle: ["piano/gentle", "greento-blue"],
+    empowering: ["ambient/energy", "idea-10"],
+    nurturing: ["piano/gentle", "greento-blue"],
+    motivating: ["piano/motivating", "idea-10"],
+    calming: ["ambient/calm", "greento-blue"],
   };
 
   // Try to match by focus area first
@@ -57,7 +57,7 @@ function selectBackgroundMusic(
   }
 
   // Default
-  return "ambient/calm";
+  return "greento-blue";
 }
 
 // Google TTS Service
@@ -561,8 +561,10 @@ app.post("/api/affirmations/:id/generate-audio", async (c) => {
     if (preferences) {
       // Check if user has custom background music
       const customMusicUrl = preferences.background_music_url as string | null;
+      console.log(`Custom music URL from preferences: ${customMusicUrl}`);
       if (customMusicUrl) {
         backgroundMusicUrl = customMusicUrl;
+        console.log(`Using custom background music: ${backgroundMusicUrl}`);
       } else {
         // Auto-select based on focus area and tone
         const focusAreas = JSON.parse(
@@ -580,7 +582,10 @@ app.post("/api/affirmations/:id/generate-audio", async (c) => {
           preferredTone
         );
         backgroundMusicUrl = `background-music/${selectedStyle}.mp3`;
+        console.log(`Auto-selected background music: ${backgroundMusicUrl}`);
       }
+    } else {
+      console.log("No preferences found for user");
     }
 
     // Generate audio
@@ -608,6 +613,7 @@ app.post("/api/affirmations/:id/generate-audio", async (c) => {
     return c.json({
       success: true,
       audioUrl: `/api/affirmations/${affirmationId}/audio`,
+      backgroundMusicUrl: backgroundMusicUrl,
     });
   } catch (error: unknown) {
     console.error("Error generating audio for affirmation:", error);
@@ -1512,6 +1518,16 @@ app.get("/api/background-music/styles", async (c) => {
         name: "Solfeggio - 528Hz",
         category: "solfeggio",
       },
+      {
+        id: "greento-blue",
+        name: "Green to Blue",
+        category: "ambient",
+      },
+      {
+        id: "idea-10",
+        name: "Idea 10",
+        category: "ambient",
+      },
     ];
 
     return c.json({ success: true, styles });
@@ -1531,7 +1547,11 @@ app.get("/api/background-music/styles", async (c) => {
 app.get("/api/background-music/:style", async (c) => {
   try {
     const style = c.req.param("style");
-    const storageKey = `background-music/${style}.mp3`;
+    // Handle both formats: "greento-blue" and "greento-blue.mp3"
+    const styleKey = style.replace(/\.mp3$/, "");
+    const storageKey = `background-music/${styleKey}.mp3`;
+    
+    console.log(`Fetching background music: ${storageKey}`);
 
     // Get file from R2
     const object = await c.env.R2_BUCKET.get(storageKey);
@@ -1585,9 +1605,14 @@ app.get("/api/background-music/custom", async (c) => {
     const prefix = `background-music/custom/${userId}/`;
 
     // List all objects with this prefix
-    const objects = await c.env.R2_BUCKET.list({ prefix });
+    const listResult = await c.env.R2_BUCKET.list({ prefix });
+    
+    console.log("R2 list result:", JSON.stringify(listResult, null, 2));
+    
+    // R2 list returns { objects: [], truncated: boolean, cursor?: string }
+    const objects = listResult.objects || [];
 
-    const musicFiles = objects.objects.map(
+    const musicFiles = objects.map(
       (obj: { key: string; uploaded?: Date; size: number }) => {
         const filename = obj.key.replace(prefix, "");
         return {
@@ -1599,6 +1624,8 @@ app.get("/api/background-music/custom", async (c) => {
         };
       }
     );
+    
+    console.log(`Found ${musicFiles.length} custom music files for user ${userId}`);
 
     // Sort by upload date (newest first)
     musicFiles.sort(
@@ -1668,6 +1695,41 @@ app.delete("/api/background-music/custom/:userId/:filename", async (c) => {
   }
 });
 
+// Upload built-in background music files (admin endpoint)
+// This endpoint can be used to upload music files from public/Background-Music to R2
+app.post("/api/background-music/upload-built-in", async (c) => {
+  try {
+    const formData = await c.req.formData();
+    const audioFile = formData.get("audio") as File;
+    const style = formData.get("style") as string; // e.g., "greento-blue" or "idea-10"
+
+    if (!audioFile || !style) {
+      return c.json({ error: "Audio file and style are required" }, 400);
+    }
+
+    const storageKey = `background-music/${style}.mp3`;
+
+    // Upload to R2
+    const arrayBuffer = await audioFile.arrayBuffer();
+    await c.env.R2_BUCKET.put(storageKey, arrayBuffer, {
+      httpMetadata: {
+        contentType: audioFile.type || "audio/mpeg",
+      },
+    });
+
+    console.log(`Uploaded built-in music file: ${storageKey}`);
+
+    return c.json({
+      success: true,
+      storage_url: storageKey,
+      audio_url: `/api/background-music/${style}`,
+    });
+  } catch (error) {
+    console.error("Background music upload error:", error);
+    return c.json({ error: "Failed to upload music" }, 500);
+  }
+});
+
 // Upload custom background music
 app.post("/api/background-music/upload", async (c) => {
   try {
@@ -1691,6 +1753,8 @@ app.post("/api/background-music/upload", async (c) => {
         contentType: audioFile.type || "audio/mpeg",
       },
     });
+
+    console.log(`Uploaded custom music file: ${storageKey}`);
 
     // Update user preferences with custom music URL
     await c.env.DB.prepare(
