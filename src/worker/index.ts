@@ -1,7 +1,17 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { zValidator } from "@hono/zod-validator";
 import OpenAI from "openai";
-import { GenerateAffirmationRequest } from "@/shared/types";
+import {
+  GenerateAffirmationRequest,
+  SignupRequest,
+  UpdateUserProfileRequest,
+  SavePreferencesRequest,
+  SaveAffirmationRequest,
+  ToggleFavoriteRequest,
+  UpdateAffirmationRequest,
+  SaveMoodTrackingRequest,
+} from "@/shared/types";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -348,19 +358,21 @@ app.post("/api/affirmations/generate", async (c) => {
 });
 
 // Save affirmation endpoint
-app.post("/api/affirmations", async (c) => {
-  try {
-    const body = await c.req.json();
-    const {
-      user_id,
-      text,
-      focus_area,
-      emotional_state,
-      tone,
-      style,
-      language,
-      voiceName,
-    } = body;
+app.post(
+  "/api/affirmations",
+  zValidator("json", SaveAffirmationRequest),
+  async (c) => {
+    try {
+      const {
+        user_id,
+        text,
+        focus_area,
+        emotional_state,
+        tone,
+        style,
+        language,
+        voiceName,
+      } = c.req.valid("json");
 
     // Save affirmation first
     const result = await c.env.DB.prepare(
@@ -451,22 +463,23 @@ app.post("/api/affirmations", async (c) => {
       }
     }
 
-    return c.json({
-      success: true,
-      id: affirmationId,
-      audioUrl: audioUrl ? `/api/affirmations/${affirmationId}/audio` : null,
-    });
-  } catch (error) {
-    console.error("Error saving affirmation:", error);
-    return c.json(
-      {
-        success: false,
-        error: "Failed to save affirmation",
-      },
-      500
-    );
+      return c.json({
+        success: true,
+        id: affirmationId,
+        audioUrl: audioUrl ? `/api/affirmations/${affirmationId}/audio` : null,
+      });
+    } catch (error) {
+      console.error("Error saving affirmation:", error);
+      return c.json(
+        {
+          success: false,
+          error: "Failed to save affirmation",
+        },
+        500
+      );
+    }
   }
-});
+);
 
 // Get user affirmations
 app.get("/api/affirmations/:userId", async (c) => {
@@ -752,11 +765,13 @@ app.get("/api/affirmations/:id/audio", async (c) => {
 });
 
 // Toggle favorite
-app.patch("/api/affirmations/:id/favorite", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const { is_favorite } = body;
+app.patch(
+  "/api/affirmations/:id/favorite",
+  zValidator("json", ToggleFavoriteRequest),
+  async (c) => {
+    try {
+      const id = c.req.param("id");
+      const { is_favorite } = c.req.valid("json");
 
     await c.env.DB.prepare(
       `
@@ -768,25 +783,28 @@ app.patch("/api/affirmations/:id/favorite", async (c) => {
       .bind(is_favorite, id)
       .run();
 
-    return c.json({ success: true });
-  } catch (error) {
-    console.error("Error updating favorite:", error);
-    return c.json(
-      {
-        success: false,
-        error: "Failed to update favorite",
-      },
-      500
-    );
+      return c.json({ success: true });
+    } catch (error) {
+      console.error("Error updating favorite:", error);
+      return c.json(
+        {
+          success: false,
+          error: "Failed to update favorite",
+        },
+        500
+      );
+    }
   }
-});
+);
 
 // Update affirmation
-app.patch("/api/affirmations/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const { text } = body;
+app.patch(
+  "/api/affirmations/:id",
+  zValidator("json", UpdateAffirmationRequest),
+  async (c) => {
+    try {
+      const id = c.req.param("id");
+      const { text } = c.req.valid("json");
 
     if (!text || text.trim().length === 0) {
       return c.json(
@@ -808,18 +826,19 @@ app.patch("/api/affirmations/:id", async (c) => {
       .bind(text.trim(), id)
       .run();
 
-    return c.json({ success: true });
-  } catch (error) {
-    console.error("Error updating affirmation:", error);
-    return c.json(
-      {
-        success: false,
-        error: "Failed to update affirmation",
-      },
-      500
-    );
+      return c.json({ success: true });
+    } catch (error) {
+      console.error("Error updating affirmation:", error);
+      return c.json(
+        {
+          success: false,
+          error: "Failed to update affirmation",
+        },
+        500
+      );
+    }
   }
-});
+);
 
 // Delete affirmation
 app.delete("/api/affirmations/:id", async (c) => {
@@ -1071,19 +1090,21 @@ app.get("/api/preferences/:userId", async (c) => {
   }
 });
 
-app.post("/api/preferences", async (c) => {
-  try {
-    const body = await c.req.json();
-    const {
-      user_id,
-      focus_areas,
-      emotional_state,
-      preferred_tone,
-      language,
-      style,
-      selected_voice,
-      interests,
-    } = body;
+app.post(
+  "/api/preferences",
+  zValidator("json", SavePreferencesRequest),
+  async (c) => {
+    try {
+      const {
+        user_id,
+        focus_areas,
+        emotional_state,
+        preferred_tone,
+        language,
+        style,
+        selected_voice,
+        interests,
+      } = c.req.valid("json");
 
     await c.env.DB.prepare(
       `
@@ -1104,18 +1125,19 @@ app.post("/api/preferences", async (c) => {
       )
       .run();
 
-    return c.json({ success: true });
-  } catch (error) {
-    console.error("Error saving preferences:", error);
-    return c.json(
-      {
-        success: false,
-        error: "Failed to save preferences",
-      },
-      500
-    );
+      return c.json({ success: true });
+    } catch (error) {
+      console.error("Error saving preferences:", error);
+      return c.json(
+        {
+          success: false,
+          error: "Failed to save preferences",
+        },
+        500
+      );
+    }
   }
-});
+);
 
 // User Voice Upload API
 app.post("/api/user-voices/upload", async (c) => {
@@ -1234,6 +1256,80 @@ app.get("/api/user-voices", async (c) => {
   }
 });
 
+// Create user (signup)
+app.post("/api/users/signup", zValidator("json", SignupRequest), async (c) => {
+  try {
+    const { name, email } = c.req.valid("json");
+
+    // Check if user with email already exists
+    const existingUser = await c.env.DB.prepare(
+      `SELECT id FROM users WHERE email = ?`
+    )
+      .bind(email)
+      .first();
+
+    if (existingUser) {
+      return c.json(
+        {
+          success: false,
+          error: "User with this email already exists",
+        },
+        400
+      );
+    }
+
+    // Insert new user
+    const result = await c.env.DB.prepare(
+      `
+      INSERT INTO users (email, name, is_premium, onboarding_completed, voice_setup_completed)
+      VALUES (?, ?, 0, 0, 0)
+    `
+    )
+      .bind(email, name)
+      .run();
+
+    const userId = result.meta.last_row_id.toString();
+
+    // Fetch the created user
+    const user = await c.env.DB.prepare(
+      `
+      SELECT id, email, name, age, gender, profession, is_premium, onboarding_completed, voice_setup_completed, created_at, updated_at
+      FROM users
+      WHERE id = ?
+    `
+    )
+      .bind(userId)
+      .first();
+
+    return c.json({
+      success: true,
+      userId,
+      user: {
+        id: user?.id,
+        email: user?.email,
+        name: user?.name,
+        age: user?.age,
+        gender: user?.gender,
+        profession: user?.profession,
+        is_premium: Boolean(user?.is_premium),
+        onboarding_completed: Boolean(user?.onboarding_completed),
+        voice_setup_completed: Boolean(user?.voice_setup_completed),
+        created_at: user?.created_at,
+        updated_at: user?.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Signup error:", error);
+    return c.json(
+      {
+        success: false,
+        error: "Failed to create user",
+      },
+      500
+    );
+  }
+});
+
 // Get user profile
 app.get("/api/users/:userId", async (c) => {
   try {
@@ -1242,7 +1338,7 @@ app.get("/api/users/:userId", async (c) => {
     const user = await c.env.DB.prepare(
       `
       SELECT id, email, name, age, gender, profession, is_premium, onboarding_completed, voice_setup_completed, created_at, updated_at
-      FROM users 
+      FROM users
       WHERE id = ?
     `
     )
@@ -1288,11 +1384,13 @@ app.get("/api/users/:userId", async (c) => {
 });
 
 // Update user profile
-app.patch("/api/users/:userId", async (c) => {
-  try {
-    const userId = c.req.param("userId");
-    const body = await c.req.json();
-    const { email, name, age, gender, profession } = body;
+app.patch(
+  "/api/users/:userId",
+  zValidator("json", UpdateUserProfileRequest),
+  async (c) => {
+    try {
+      const userId = c.req.param("userId");
+      const { email, name, age, gender, profession } = c.req.valid("json");
 
     // Build update query dynamically
     const updates: string[] = [];
@@ -1348,24 +1446,28 @@ app.patch("/api/users/:userId", async (c) => {
       .bind(...values)
       .run();
 
-    return c.json({ success: true });
-  } catch (error) {
-    console.error("Error updating user:", error);
-    return c.json(
-      {
-        success: false,
-        error: "Failed to update user",
-      },
-      500
-    );
+      return c.json({ success: true });
+    } catch (error) {
+      console.error("Error updating user:", error);
+      return c.json(
+        {
+          success: false,
+          error: "Failed to update user",
+        },
+        500
+      );
+    }
   }
-});
+);
 
 // Mood Tracking endpoints
-app.post("/api/mood-tracking", async (c) => {
-  try {
-    const body = await c.req.json();
-    const { user_id, mood_before, mood_after, affirmation_id } = body;
+app.post(
+  "/api/mood-tracking",
+  zValidator("json", SaveMoodTrackingRequest),
+  async (c) => {
+    try {
+      const { user_id, mood_before, mood_after, affirmation_id } =
+        c.req.valid("json");
 
     const result = await c.env.DB.prepare(
       `
@@ -1381,21 +1483,22 @@ app.post("/api/mood-tracking", async (c) => {
       )
       .run();
 
-    return c.json({
-      success: true,
-      id: result.meta.last_row_id,
-    });
-  } catch (error) {
-    console.error("Error saving mood tracking:", error);
-    return c.json(
-      {
-        success: false,
-        error: "Failed to save mood tracking",
-      },
-      500
-    );
+      return c.json({
+        success: true,
+        id: result.meta.last_row_id,
+      });
+    } catch (error) {
+      console.error("Error saving mood tracking:", error);
+      return c.json(
+        {
+          success: false,
+          error: "Failed to save mood tracking",
+        },
+        500
+      );
+    }
   }
-});
+);
 
 app.get("/api/mood-tracking/:userId", async (c) => {
   try {
