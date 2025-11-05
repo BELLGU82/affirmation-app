@@ -83,6 +83,17 @@ export const UserVoiceSchema = z.object({
 export type UserVoice = z.infer<typeof UserVoiceSchema>;
 
 // API Request/Response Types
+
+// Base API Response Types (must be defined first)
+export const ApiSuccessResponse = z.object({
+  success: z.literal(true),
+});
+
+export const ApiErrorResponse = z.object({
+  success: z.literal(false),
+  error: z.string(),
+});
+
 export const SignupRequest = z.object({
   name: z.string().min(1, "Name is required").max(100),
   email: z.string().email("Invalid email address").max(255),
@@ -192,15 +203,6 @@ export const AudioSettingsSchema = z.object({
 export type AudioSettingsType = z.infer<typeof AudioSettingsSchema>;
 
 // Additional API Response Types
-export const ApiSuccessResponse = z.object({
-  success: z.literal(true),
-});
-
-export const ApiErrorResponse = z.object({
-  success: z.literal(false),
-  error: z.string(),
-});
-
 export const SaveAffirmationResponse = z.union([
   z.object({
     success: z.literal(true),
